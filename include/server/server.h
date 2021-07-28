@@ -29,7 +29,7 @@ struct ConnInfo {
     char ipv6_[16];
     struct {
       unsigned char domain_len_;
-      char domain_[128];
+      char domain_[256];
     };
   } __attribute__((packed)) dest_addr_;
   unsigned short port_;
@@ -42,6 +42,8 @@ class LightSocksServer : public Server {
   using ConnToCli = std::unordered_map<TcpConnection *, std::weak_ptr<Client>>;
   using ConnToEnc =
       std::unordered_map<TcpConnection *, std::shared_ptr<EncryptBase>>;
+  using ConnToSend =
+      std::unordered_map<TcpConnection *, std::vector<std::pair<char *, int>>>;
 
   LightSocksServer(int io_threads_num = 3, int timer_num = 1,
                    unsigned short port = 12111, uint8_t tpool_num = 0);
@@ -67,13 +69,19 @@ class LightSocksServer : public Server {
   void ConnectToAddr(std::string, unsigned short, char *, int, int,
                      const std::weak_ptr<TcpConnection>);
 
-  std::unordered_map<TcpConnection *, CONNSTATUS> conn_status;
-  CliToConn cli_to_conn_;
-  ConnToCli conn_to_cli_;
   Looper<TcpConnection> *client_loop_;
-  ConnToEnc conn_to_enc_;
   std::unique_ptr<AsyncDns> dns_query_;
   int wakeup_dns_fd_;
+
+  ConnToEnc conn_to_client_enc_;
+  ConnToEnc conn_to_server_enc_;
+
+  CliToConn cli_to_conn_;
+  ConnToCli conn_to_cli_;
+  std::unordered_map<TcpConnection *, CONNSTATUS> conn_status;
+
+  ConnToSend conn_to_send_;
+  std::mutex send_mtx_;
 
   size_t key_len_;
   size_t iv_len_;

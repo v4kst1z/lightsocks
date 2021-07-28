@@ -8,6 +8,10 @@
 
 #include "server/server.h"
 
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <sys/socket.h>
+
 #include <csignal>
 #include <cstring>
 
@@ -50,6 +54,11 @@ LightSocksServer::LightSocksServer(int io_threads_num, int timer_num,
 
 void LightSocksServer::NewConnectionCB(
     const std::shared_ptr<TcpConnection> &conn) {
+  int fd = conn->GetConnFd();
+
+  int enable = 1;
+  setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (void *)&enable, sizeof(enable));
+
   auto peer = conn->GetPeerAddr();
   conn_status.insert({conn.get(), CONNSTATUS::NONE});
   DEBUG << "client at " << peer->GetIp() << ":" << peer->GetPort();
@@ -68,10 +77,11 @@ void LightSocksServer::MessageCB(const std::shared_ptr<TcpConnection> &conn,
       size_t len = buf.GetReadAbleSize() - iv_len_;
       char *data = (char *)malloc(len);
 
-      conn_to_enc_.insert({conn.get(), enc});
+      conn_to_client_enc_.insert({conn.get(), enc});
       enc->ResetIvAndKey(buff);
       enc->DecryptData(len, (const unsigned char *)(buff + iv_len_),
                        (unsigned char *)data);
+
       ConnInfo *c_info = new ConnInfo;
       int header_len = ParseConnInfo(c_info, data);
 
@@ -99,31 +109,25 @@ void LightSocksServer::MessageCB(const std::shared_ptr<TcpConnection> &conn,
     } break;
     case CONNSTATUS::SEND: {
       char *buff = const_cast<char *>(buf.GetReadAblePtr());
-      size_t len = buf.GetReadAbleSize() - iv_len_;
-      char *data = (char *)malloc(len + 1);
-      memset(data, '\x00', len + 1);
-      conn_to_enc_[conn.get()]->ResetIvAndKey(buff);
-      conn_to_enc_[conn.get()]->DecryptData(
-          len, (const unsigned char *)(buff + iv_len_), (unsigned char *)data);
-      printf("%s\n", data);
+      size_t len = buf.GetReadAbleSize();
+      char *data = (char *)malloc(len);
+      memset(data, '\x00', len);
+      auto enc = conn_to_client_enc_[conn.get()];
+      enc->DecryptData(len, (const unsigned char *)(buff),
+                       (unsigned char *)data);
 
-      // char *data = (char *)malloc(buf.GetReadAbleSize());
-      // conn_to_enc_[conn.get()]->DecryptData(
-      //     buf.GetReadAbleSize(), (const unsigned char
-      //     *)(buf.GetReadAblePtr()), (unsigned char *)data);
-      // printf("%s\n", data);
-      for (size_t id = 0; id < len; id++) {
-        printf("%02x", (unsigned char)data[id]);
+      auto cli = conn_to_cli_[conn.get()].lock();
+      if (!cli.get()) {
+        std::lock_guard<std::mutex> lck(send_mtx_);
+        conn_to_send_[conn.get()].push_back({data, len});
+      } else {
+        cli->SendData(data, len, true);
       }
-      printf("\n");
-      free(data);
     } break;
     default:
       DEBUG << "STATUS Error~";
       break;
   }
-  auto cli = conn_to_cli_[conn.get()].lock();
-  if (cli) cli->SendData(&buf);
   buf.ResetId();
 }
 
@@ -134,26 +138,68 @@ void LightSocksServer::ConnectToAddr(std::string domain_ip, unsigned short port,
   auto ip = std::make_shared<Ipv4Addr>(domain_ip.c_str(), port);
   auto client = std::make_shared<Client>(client_loop_, ip, false, true);
 
-  client->SetMessageCallBack(
-      [conn](const std::shared_ptr<TcpConnection> &conn_ser, IOBuffer &buff) {
-        auto w_conn = conn.lock();
-        if (w_conn) w_conn->SendData(&buff);
+  int fd = client->GetConnFd();
+  int enable = 1;
+  setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (void *)&enable, sizeof(enable));
 
-        buff.ResetId();
-      });
+  auto cli_conn = conn.lock();
+  if (!cli_conn.get()) return;
+
+  client->SetMessageCallBack([&, conn](
+                                 const std::shared_ptr<TcpConnection> &conn_ser,
+                                 IOBuffer &buff) {
+    auto cli_conn = conn.lock();
+    if (!cli_conn) return;
+
+    int len = buff.GetReadAbleSize();
+    unsigned char *buffer;
+
+    std::shared_ptr<EncryptBase> enc;
+    if (conn_to_server_enc_.find(cli_conn.get()) == conn_to_server_enc_.end()) {
+      enc = std::shared_ptr<EncryptBase>(EncryptBaseFactory::GetEncryptInstance(
+          encrypt_name_, passwd_, key_len_, iv_len_));
+      conn_to_server_enc_.insert({cli_conn.get(), enc});
+      len += iv_len_;
+      buffer = (unsigned char *)malloc(len);
+      memcpy(buffer, enc->GetIvPtr(), iv_len_);
+      enc->EncryptData(len - iv_len_,
+                       (const unsigned char *)(buff.GetReadAblePtr()),
+                       buffer + iv_len_);
+      cli_conn->SendData(buffer, len, true);
+
+    } else {
+      enc = conn_to_server_enc_[cli_conn.get()];
+      buffer = (unsigned char *)malloc(len);
+      enc->EncryptData(len, (const unsigned char *)(buff.GetReadAblePtr()),
+                       buffer);
+      cli_conn->SendData(buffer, len, true);
+    }
+
+    buff.ResetId();
+  });
 
   client->SetCloseCallBack(
-      [this, conn](const std::shared_ptr<TcpConnection> &conn_ser) {
+      [&, conn](const std::shared_ptr<TcpConnection> &conn_ser) {
         cli_to_conn_.erase(conn_to_cli_[conn.lock().get()].lock());
-        conn_to_cli_.erase(conn.lock().get());
+        auto cli_conn = conn.lock();
+        if (!cli_conn) return;
+        conn_to_server_enc_.erase(cli_conn.get());
       });
 
   client->Connect();
-  client->SendData(data + pos, len);
+  if (len > 0) client->SendData(data + pos, len);
 
   free(data);
   cli_to_conn_.insert({client, conn});
   conn_to_cli_.insert({conn.lock().get(), client});
+
+  {
+    std::lock_guard<std::mutex> lck(send_mtx_);
+    for (auto &pi : conn_to_send_[cli_conn.get()]) {
+      client->SendData(pi.first, pi.second, true);
+    }
+    conn_to_send_[cli_conn.get()] = {};
+  }
 }
 
 int LightSocksServer::ParseConnInfo(ConnInfo *c_info, char *data) {
@@ -177,6 +223,7 @@ int LightSocksServer::ParseConnInfo(ConnInfo *c_info, char *data) {
              c_info->dest_addr_.domain_len_);
       c_info->dest_addr_.domain_[c_info->dest_addr_.domain_len_] = '\x00';
       memcpy(&c_info->port_, data + 2 + c_info->dest_addr_.domain_len_, 2);
+      len += 1 + c_info->dest_addr_.domain_len_ + 2;
     } break;
     default:
       break;
@@ -187,14 +234,16 @@ int LightSocksServer::ParseConnInfo(ConnInfo *c_info, char *data) {
 void LightSocksServer::CloseCB(const std::shared_ptr<TcpConnection> &conn) {
   auto peer = conn->GetPeerAddr();
   conn_status.erase(conn.get());
-  conn_to_enc_.erase(conn.get());
+  conn_to_cli_.erase(conn.get());
+  conn_to_client_enc_.erase(conn.get());
   DEBUG << "close at " << peer->GetIp() << ":" << peer->GetPort();
 }
 
 void LightSocksServer::ErrorCB(const std::shared_ptr<TcpConnection> &conn) {
   auto peer = conn->GetPeerAddr();
   conn_status.erase(conn.get());
-  conn_to_enc_.erase(conn.get());
+  conn_to_cli_.erase(conn.get());
+  conn_to_client_enc_.erase(conn.get());
   DEBUG << "Error at " << peer->GetIp() << ":" << peer->GetPort();
 }
 

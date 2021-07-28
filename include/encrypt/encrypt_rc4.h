@@ -20,6 +20,10 @@ class EncryptBaseRc4 : public EncryptBase {
 
   void SetIv() override;
 
+  char *GetIvPtr() override;
+
+  char *GetKeyPtr() override;
+
   void ResetIvAndKey(char *) override;
 
   void EncryptData(size_t, const unsigned char *, unsigned char *) override;

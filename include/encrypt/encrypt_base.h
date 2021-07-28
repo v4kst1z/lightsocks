@@ -21,6 +21,10 @@ class EncryptBase {
 
   virtual void SetIv() {}
 
+  virtual char *GetIvPtr() { return nullptr; }
+
+  virtual char *GetKeyPtr() { return nullptr; }
+
   virtual void EncryptData(size_t, const unsigned char *, unsigned char *) {}
 
   virtual void DecryptData(size_t, const unsigned char *, unsigned char *) {}

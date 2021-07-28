@@ -29,6 +29,10 @@ void EncryptBaseRc4::SetKey() {
 
 void EncryptBaseRc4::SetIv() { SetRandomIv(iv_len_, iv_); }
 
+char *EncryptBaseRc4::GetIvPtr() { return iv_; }
+
+char *EncryptBaseRc4::GetKeyPtr() { return key_; }
+
 void EncryptBaseRc4::ResetIvAndKey(char *iv) {
   memcpy(iv_, iv, iv_len_);
   SetKey();

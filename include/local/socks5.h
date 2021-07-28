@@ -37,7 +37,7 @@ struct SocksAuthReq {
     char ipv6_[16];
     struct {
       unsigned char domain_len_;
-      char domain_[128];
+      char domain_[256];
     };
   } __attribute__((packed)) dest_addr_;
   unsigned short port_;
