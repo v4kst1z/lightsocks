@@ -45,7 +45,7 @@ class LightSocksServer : public Server {
   using ConnToSend =
       std::unordered_map<TcpConnection *, std::vector<std::pair<char *, int>>>;
 
-  LightSocksServer(int io_threads_num = 3, int timer_num = 1,
+  LightSocksServer(int io_threads_num = 5, int timer_num = 1,
                    unsigned short port = 12111, uint8_t tpool_num = 0);
 
   void NewConnectionCB(const std::shared_ptr<TcpConnection> &conn);
@@ -56,8 +56,7 @@ class LightSocksServer : public Server {
 
   void ErrorCB(const std::shared_ptr<TcpConnection> &conn);
 
-  void SetEncryptInfo(size_t, size_t, std::string, std::string, unsigned short,
-                      unsigned short);
+  void SetEncryptInfo(size_t, size_t, std::string, std::string);
 
   int ParseConnInfo(ConnInfo *, char *buff);
 
@@ -71,10 +70,9 @@ class LightSocksServer : public Server {
 
   Looper<TcpConnection> *client_loop_;
   std::unique_ptr<AsyncDns> dns_query_;
-  int wakeup_dns_fd_;
 
-  ConnToEnc conn_to_client_enc_;
-  ConnToEnc conn_to_server_enc_;
+  ConnToEnc conn_to_decrypt_;
+  ConnToEnc conn_to_encrypt_;
 
   CliToConn cli_to_conn_;
   ConnToCli conn_to_cli_;
@@ -88,7 +86,6 @@ class LightSocksServer : public Server {
   std::string passwd_;
   std::string encrypt_name_;
   unsigned short port_;
-  unsigned short time_out_;
 };
 
 #endif  // LIGHTSOCKS_INCLUDE_SERVER_SERVER_H_

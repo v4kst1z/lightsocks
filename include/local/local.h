@@ -10,6 +10,7 @@
 #define LIGHTSOCKS_INCLUDE_LOCAL_LOCAL_H_
 
 #include "Server.h"
+#include "encrypt/encrypt_base.h"
 
 class Client;
 struct SocksAuthReq;
@@ -25,8 +26,10 @@ class LightSocksLocal : public Server {
   using CliToConn =
       std::unordered_map<std::shared_ptr<Client>, std::weak_ptr<TcpConnection>>;
   using ConnToCli = std::unordered_map<TcpConnection *, std::weak_ptr<Client>>;
+  using ConnToEnc =
+      std::unordered_map<TcpConnection *, std::shared_ptr<EncryptBase>>;
 
-  LightSocksLocal(int io_threads_num = 5, int timer_num = 1,
+  LightSocksLocal(int io_threads_num = 3, int timer_num = 1,
                   unsigned short port = 9999, uint8_t tpool_num = 0);
 
   void NewConnectionCB(const std::shared_ptr<TcpConnection> &conn);
@@ -36,6 +39,9 @@ class LightSocksLocal : public Server {
   void CloseCB(const std::shared_ptr<TcpConnection> &conn);
 
   void ErrorCB(const std::shared_ptr<TcpConnection> &conn);
+
+  void SetLocalInfo(size_t, size_t, std::string, std::string, unsigned short,
+                    std::string);
 
   ~LightSocksLocal();
 
@@ -48,6 +54,16 @@ class LightSocksLocal : public Server {
   CliToConn cli_to_conn_;
   ConnToCli conn_to_cli_;
   Looper<TcpConnection> *client_loop_;
+
+  ConnToEnc conn_to_encrypt_;
+  ConnToEnc conn_to_decrypt_;
+
+  size_t key_len_;
+  size_t iv_len_;
+  std::string passwd_;
+  std::string encrypt_name_;
+  std::string server_ip_;
+  unsigned short port_;
 };
 
 #endif  // LIGHTSOCKS_INCLUDE_LOCAL_LOCAL_H_

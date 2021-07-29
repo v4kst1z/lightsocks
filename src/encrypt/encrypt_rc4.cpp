@@ -25,6 +25,7 @@ void EncryptBaseRc4::SetKey() {
   GetRc4Key((unsigned char *)key_, (unsigned char *)key, key_len_,
             (unsigned char *)iv_, iv_len_);
   free(key);
+  SetRc4Key(&rc4_key_, key_len_, (unsigned char *)key_);
 }
 
 void EncryptBaseRc4::SetIv() { SetRandomIv(iv_len_, iv_); }
@@ -40,12 +41,10 @@ void EncryptBaseRc4::ResetIvAndKey(char *iv) {
 
 void EncryptBaseRc4::EncryptData(size_t len, const unsigned char *indata,
                                  unsigned char *outdata) {
-  SetRc4Key(&rc4_key_, key_len_, (unsigned char *)key_);
   Rc4Encrypt(&rc4_key_, len, indata, outdata);
 }
 
 void EncryptBaseRc4::DecryptData(size_t len, const unsigned char *indata,
                                  unsigned char *outdata) {
-  SetRc4Key(&rc4_key_, key_len_, (unsigned char *)key_);
   Rc4Encrypt(&rc4_key_, len, indata, outdata);
 }
