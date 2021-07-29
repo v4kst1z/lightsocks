@@ -5,7 +5,7 @@
 mkdir build
 cd build
 cmake ..
-make -j 16
+make -j16
 ```
 ## 运行
 ```
