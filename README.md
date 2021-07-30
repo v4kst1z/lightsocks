@@ -5,7 +5,7 @@
 mkdir build
 cd build
 cmake ..
-make -j 16
+make -j16
 ```
 ## 运行
 ```
@@ -15,3 +15,4 @@ make -j 16
 
 ## 支持的加密
 * rc4-md5
+
