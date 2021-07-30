@@ -53,10 +53,18 @@ class LightSocksLocal : public Server {
   std::unordered_map<TcpConnection *, CONNSTATUS> conn_status;
   CliToConn cli_to_conn_;
   ConnToCli conn_to_cli_;
-  Looper<TcpConnection> *client_loop_;
 
   ConnToEnc conn_to_encrypt_;
   ConnToEnc conn_to_decrypt_;
+
+  std::mutex decrypt_mtx_;
+  std::mutex encrypt_mtx_;
+  std::mutex cli_mtx_;
+  std::mutex conn_mtx_;
+
+  int io_nums_;
+  std::atomic<int> io_idx_;
+  std::vector<Looper<TcpConnection> *> io_threads_;
 
   size_t key_len_;
   size_t iv_len_;

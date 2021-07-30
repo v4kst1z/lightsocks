@@ -15,6 +15,3 @@ make -j 16
 
 ## 支持的加密
 * rc4-md5
-
-## Todo
-fix bugs

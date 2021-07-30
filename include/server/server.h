@@ -68,7 +68,6 @@ class LightSocksServer : public Server {
   void ConnectToAddr(std::string, unsigned short, char *, int, int,
                      const std::weak_ptr<TcpConnection>);
 
-  Looper<TcpConnection> *client_loop_;
   std::unique_ptr<AsyncDns> dns_query_;
 
   ConnToEnc conn_to_decrypt_;
@@ -80,6 +79,16 @@ class LightSocksServer : public Server {
 
   ConnToSend conn_to_send_;
   std::mutex send_mtx_;
+
+  std::mutex decrypt_mtx_;
+  std::mutex encrypt_mtx_;
+  std::mutex conn_to_cli_mtx_;
+  std::mutex conn_status_mtx_;
+  std::mutex cli_to_conn_mtx_;
+
+  int io_nums_;
+  std::atomic<int> io_idx_;
+  std::vector<Looper<TcpConnection> *> io_threads_;
 
   size_t key_len_;
   size_t iv_len_;
